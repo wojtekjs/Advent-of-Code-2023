@@ -164,68 +164,78 @@ def flatten_list(nested_list):
     return flat_list
 
 
+def get_adjacent_part_nums(
+    sym_line_idx: int, line_num: int, last_line: int, schematic: list[str]
+) -> list[int]:
+    ret_list: list[int] = []
+
+    if sym_line_idx != 0:
+        left_values: list[int | None] = step_lat(
+            schematic[line_num], sym_line_idx, "left"
+        )
+        ret_list.append(left_values)
+    if sym_line_idx != len(schematic[line_num]) - 1:
+        right_values: list[int | None] = step_lat(
+            schematic[line_num], sym_line_idx, "right"
+        )
+        ret_list.append(right_values)
+
+    if line_num != 0:
+        all_above = get_vertical_values(line_num, sym_line_idx, schematic, "above")
+        ret_list.append(all_above)
+
+    if line_num != last_line:
+        all_below = get_vertical_values(line_num, sym_line_idx, schematic, "below")
+        ret_list.append(all_below)
+
+    return flatten_list(ret_list)
+
+
 def get_schematic_sum(
     schematic: list[str], symbol_locations: dict[int, list[int]]
-) -> int:
+) -> list[int]:
     valid_for_sum: list[int] = []
     last_line: int = list(symbol_locations.keys())[-1]
 
     for line_num, sym_locs in symbol_locations.items():
         for sym_line_idx in sym_locs:
-            left_values, right_values = [], []
-            if sym_line_idx != 0:
-                left_values: list[int | None] = step_lat(
-                    schematic[line_num], sym_line_idx, "left"
-                )
-            if sym_line_idx != len(schematic[line_num]) - 1:
-                right_values: list[int | None] = step_lat(
-                    schematic[line_num], sym_line_idx, "right"
-                )
-
-            lr_values: list[int | None] = [left_values, right_values]
-
-            all_above: list = []
-            if line_num != 0:
-                all_above = get_vertical_values(
-                    line_num, sym_line_idx, schematic, "above"
-                )
-
-            all_below: list = []
-            if line_num != last_line:
-                all_below = get_vertical_values(
-                    line_num, sym_line_idx, schematic, "below"
-                )
-
-            valid_for_sum.extend([lr_values, all_below, all_above])
+            valid_for_sum.extend(
+                get_adjacent_part_nums(sym_line_idx, line_num, last_line, schematic)
+            )
 
     flat_valid_for_sum: list[int | None] = flatten_list(valid_for_sum)
     int_list: list[int] = list(filter(lambda t: isinstance(t, int), flat_valid_for_sum))
-    return sum(int_list)
+    return int_list
 
 
 def get_gear_ratios(
     schematic: list[str], gear_locations: dict[int, list[int]]
 ) -> list[int]:
     gear_ratios: list[int] = []
+    last_line: int = len(schematic) - 1
     for line_num, gear_locs in gear_locations.items():
         for g_loc in gear_locs:
-            adjacent_part_nums: list[int] = []
-            # TODO check the same way as above for numbers adjacent to the gear then add them to the list above
-            gear_ratios.extend(adjacent_part_nums)
+            adjacent_part_nums: list[int] = get_adjacent_part_nums(
+                g_loc, line_num, last_line, schematic
+            )
+            adjacent_part_nums = list(
+                filter(lambda i: i is not None, adjacent_part_nums)
+            )
+            if len(adjacent_part_nums) == 2:
+                gear_ratios.append(adjacent_part_nums[0] * adjacent_part_nums[1])
 
-    ic(gear_ratios)
     return sum(gear_ratios)
 
 
 if __name__ == "__main__":
-    with open("test_input.txt", "r") as f:
-        # with open("day3_input.txt", "r") as f:
+    # with open("test_input.txt", "r") as f:
+    with open("day3_input.txt", "r") as f:
         schematic = f.readlines()
         schematic = [line.strip() for line in schematic]
 
     # Part 1
     symbol_locations = get_symbol_indexes(schematic=schematic, symbol=ENGLISH_SYMBOLS)
-    ic(get_schematic_sum(schematic=schematic, symbol_locations=symbol_locations))
+    ic(sum(get_schematic_sum(schematic, symbol_locations)))
 
     # Part 2
     gear_locations = get_symbol_indexes(schematic=schematic, symbol="*")
