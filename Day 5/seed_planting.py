@@ -49,35 +49,25 @@ def get_seeds(seed_line: str) -> list[int]:
     return [int(num.strip()) for num in seed_nums if num != ""]
 
 
-def build_df_from_map(planting_map: Map) -> pd.DataFrame:
-    print(f"{planting_map.source_name} -> {planting_map.destination_name}.")
-    max_df: int = 0
-    for range_obj in planting_map.ranges:
-        biggest: int = max(
-            range_obj.destination + range_obj.length,
-            range_obj.source + range_obj.length,
-        )
-        if biggest > max_df:
-            max_df = biggest
-    print(f"Determined {max_df=}.")
-
-    # TODO still getting some NaNs here for some reason
+def build_df_from_map_targeted(
+    planting_map: Map, target_values: list[int]
+) -> pd.DataFrame:
     map_df: pd.DataFrame = pd.DataFrame(
-        index=range(1, max_df + 1),
         columns=[planting_map.source_name, planting_map.destination_name],
     )
-    print("Populating template DF.")
-    for i in range(1, max_df + 1):
-        map_df.at[i, planting_map.source_name] = i
-        map_df.at[i, planting_map.destination_name] = i
 
-    # This is the clutch code that makes it happen
-    for i, range_obj in enumerate(planting_map.ranges):
-        print(f"Parsing Range {i}/{len(planting_map.ranges)}")
-        for c in range(range_obj.length):
-            map_df.at[range_obj.source + c, planting_map.destination_name] = (
-                range_obj.destination + c
-            )
+    located_tar_vals: list[int] = []
+    for range_obj in planting_map.ranges:
+        for tar_val in target_values:
+            if range_obj.source <= tar_val <= range_obj.source + range_obj.length:
+                located_tar_vals.append(tar_val)
+                diff: int = tar_val - range_obj.source
+                corresponding_destination_value: int = range_obj.destination + diff
+                map_df.loc[len(map_df)] = [tar_val, corresponding_destination_value]
+
+    for tar_val in target_values:
+        if tar_val not in located_tar_vals:
+            map_df.loc[len(map_df)] = [tar_val, tar_val]
 
     return map_df.sort_values(by=planting_map.source_name, ascending=True)
 
@@ -89,7 +79,7 @@ def fuse_dfs(dfs: list[pd.DataFrame]) -> pd.DataFrame:
     return starting_df
 
 
-def get_lowest_location_number(final_df: pd.DataFrame) -> int:
+def get_lowest_location_number(final_df: pd.DataFrame, seeds: list[int]) -> int:
     return int(
         final_df[final_df["seed"].apply(lambda s: s in seeds)][["location"]]
         .sort_values(by="location", ascending=True)
@@ -97,27 +87,45 @@ def get_lowest_location_number(final_df: pd.DataFrame) -> int:
     )
 
 
-# NOTE there is an optimisation here where I just parse the calc for seeds and matching lines??
+def get_puzzle_response_lowest_loc(almanac: list[str], seeds: list[int]) -> None:
+    map_chunks: list[list[str]] = get_map_chunks(almanac)
+    maps: list[Map] = [get_map(chunk) for chunk in map_chunks]
+    map_dfs: list[pd.DataFrame] = []
+    for i, m in enumerate(maps):
+        # tar_v is either the seed values for the first DF or the last DF's right most column (which is their overlap/link column)
+        tar_v: list[int] = (
+            seeds if i == 0 else list(map_dfs[-1][map_dfs[-1].columns[1]])
+        )
+        map_dfs.append(build_df_from_map_targeted(planting_map=m, target_values=tar_v))
+
+    final_df: pd.DataFrame = fuse_dfs(map_dfs)
+
+    lowest_location: int = get_lowest_location_number(final_df, seeds)
+    ic(lowest_location)
+
+
+def get_seed_ranges(seed_line: str) -> list[int]:
+    seed_ints: list[int] = get_seeds(seed_line)
+    all_seeds: list[int] = []
+    for seed_idx in range(0, len(seed_ints), 2):
+        range_start: int = seed_ints[seed_idx]
+        range_len: int = seed_ints[seed_idx + 1]
+        all_seeds.extend([range_start + i for i in range(range_len)])
+    return all_seeds
+
+
 if __name__ == "__main__":
     # with open("test_input1.txt", "r") as f:
     with open("day5_input.txt", "r") as f:
         almanac = f.readlines()
         almanac = list(filter(lambda l: l != "", [line.strip() for line in almanac]))
 
-    # Seed line is always the first in the almanac
-    seeds = get_seeds(seed_line=almanac[0])
-    ic()
-    map_chunks: list[list[str]] = get_map_chunks(almanac)
-    ic()
-    maps: list[Map] = [get_map(chunk) for chunk in map_chunks]
-    ic()
-    map_dfs: list[pd.DataFrame] = [
-        build_df_from_map(planting_map) for planting_map in maps
-    ]
-    ic()
-    final_df: pd.DataFrame = fuse_dfs(map_dfs)
-    ic()
-
     # Part 1: What is the lowest location number that corresponds to any of the initial seed numbers?
-    lowest_location: int = get_lowest_location_number(final_df)
-    ic(lowest_location)
+    # Seed line is always the first in the almanac
+    seeds: list[int] = get_seeds(seed_line=almanac[0])
+    get_puzzle_response_lowest_loc(almanac, seeds)
+
+    # Part 2: Same question, but the `seed:` line now represents ranges (num1 is the start point and num2 is the length of the range. E.g., 79 14: range of seeds containing values 79, 80, ... 91, 92.)
+    seeds: list[int] = get_seed_ranges(seed_line=almanac[0])
+    # TODO Takes an impossibly long time. Need new solution
+    get_puzzle_response_lowest_loc(almanac, seeds)
